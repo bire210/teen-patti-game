@@ -1,0 +1,50 @@
+name: Sikkaplay backend Beanstalk Deploy Development
+run-name: Elastic Beanstalk Deploy Production
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - deploy/test
+  pull_request:
+      types:
+          - closed
+      branches:
+          - deploy/test
+
+jobs:
+  deploy:
+    name: deploy backend
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure aws client
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-2"
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+      - run: npm install
+      - name: Create code bundle for deployment
+        run: zip -q code-bundle.zip -r teenPatiGame package.json package-lock.json  index.js Procfile
+      - name: Copy code bundle to s3 bucket for code
+        run: aws s3 cp code-bundle.zip s3://sikka-play-ebs-code/socket/code-bundle-${{github.sha}}.zip
+      - name: create new ElasticBeanstalk Application version
+        run: |
+          aws elasticbeanstalk create-application-version \
+          --application-name sikka-play-socket \
+          --source-bundle S3Bucket="sikka-play-ebs-code",S3Key="socket/code-bundle-${{github.sha}}.zip" \
+          --version-label "${{github.sha}}" \
+          --description "commit-sha-${{github.sha}}"
+      - name: Update elasticbeanstalk environment with latest application-version
+        run: |
+          aws elasticbeanstalk update-environment \
+          --application-name sikka-play-socket \
+          --environment-id "e-batwte4mir" \
+          --version-label "${{github.sha}}"
+      - name: Success
+        run: |
+          echo "Successfull"
